@@ -82,27 +82,44 @@ function HomePage() {
         </div>
       )}
 
-      {/* Quick Actions */}
-      <QuickActions
-        ongoingSleep={!!ongoingSleep}
-        sleepElapsed={sleepElapsed}
-        onFeeding={() => setSheet('feeding')}
-        onDiaper={() => setSheet('diaper')}
-        onSleep={startSleep}
-        onEndSleep={endSleep}
-      />
+      {/* Empty State Guide */}
+      {babies.length === 0 ? (
+        <div className="rounded-2xl bg-white p-6 text-center">
+          <Icon icon="mdi:baby-face-outline" className="mx-auto mb-4 text-4xl text-creamdark" />
+          <h2 className="mb-2 text-xl font-bold">还没有宝宝记录</h2>
+          <p className="mb-4 text-inksoft">点击下方按钮添加第一个宝宝</p>
+          <button
+            onClick={() => setShowAddBaby(true)}
+            className="rounded-2xl bg-brand px-8 py-4 text-lg font-medium text-white transition active:scale-95"
+          >
+            添加宝宝
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Quick Actions */}
+          <QuickActions
+            ongoingSleep={!!ongoingSleep}
+            sleepElapsed={sleepElapsed}
+            onFeeding={() => setSheet('feeding')}
+            onDiaper={() => setSheet('diaper')}
+            onSleep={startSleep}
+            onEndSleep={endSleep}
+          />
 
-      {/* Today Stats */}
-      <TodayStats babies={babies} feedings={feedings} diapers={diapers} sleeps={sleeps} />
+          {/* Today Stats */}
+          <TodayStats babies={babies} feedings={feedings} diapers={diapers} sleeps={sleeps} />
 
-      {/* Timeline */}
-      <Timeline
-        feedings={feedings}
-        diapers={diapers}
-        sleeps={sleeps}
-        babies={babies}
-        onDelete={deleteRecord}
-      />
+          {/* Timeline */}
+          <Timeline
+            feedings={feedings}
+            diapers={diapers}
+            sleeps={sleeps}
+            babies={babies}
+            onDelete={deleteRecord}
+          />
+        </>
+      )}
 
       {/* Sheets */}
       {sheet === 'feeding' && (
@@ -157,7 +174,7 @@ function BabySwitcher({
         className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-inksoft px-3 py-1.5 text-inksoft"
       >
         <span className="text-lg">+</span>
-        <span>添加</span>
+        <span>{babies.length === 0 ? '添加宝宝' : '添加'}</span>
       </button>
     </div>
   );
@@ -1115,6 +1132,69 @@ function ManagePage() {
   );
 }
 
+// --- Auth Validation ---
+type PasswordStrengthLevel = 'weak' | 'medium' | 'strong';
+
+// 用户名：2-20 字符，中文/英文/数字/下划线，不能以数字开头
+const USERNAME_REGEX = /^[一-龥a-zA-Z_][一-龥a-zA-Z0-9_]{1,19}$/;
+
+function validateUsername(username: string): { valid: boolean; message: string } {
+  if (!username) return { valid: false, message: '请输入用户名' };
+  if ([...username].length < 2) return { valid: false, message: '用户名至少 2 个字符' };
+  if ([...username].length > 20) return { valid: false, message: '用户名最多 20 个字符' };
+  if (/^[0-9]/.test(username)) return { valid: false, message: '用户名不能以数字开头' };
+  if (!USERNAME_REGEX.test(username)) return { valid: false, message: '只能使用中文、英文、数字、下划线' };
+  return { valid: true, message: '' };
+}
+
+// 密码：6-20 位，必须含字母和数字
+function validatePassword(password: string): {
+  valid: boolean;
+  message: string;
+  strength: PasswordStrengthLevel;
+} {
+  if (!password) return { valid: false, message: '请输入密码', strength: 'weak' };
+  if (password.length < 6) return { valid: false, message: '密码至少 6 位', strength: 'weak' };
+  if (password.length > 20) return { valid: false, message: '密码最多 20 位', strength: 'weak' };
+
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  if (!hasLetter) return { valid: false, message: '密码需包含字母', strength: 'weak' };
+  if (!hasNumber) return { valid: false, message: '密码需包含数字', strength: 'weak' };
+
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+  const isLong = password.length >= 10;
+  const strength: PasswordStrengthLevel = hasSpecial || isLong ? 'strong' : 'medium';
+  return { valid: true, message: '', strength };
+}
+
+const STRENGTH_LEVEL: Record<PasswordStrengthLevel, number> = { weak: 1, medium: 2, strong: 3 };
+
+function PasswordStrength({ strength }: { strength: PasswordStrengthLevel }) {
+  const config = {
+    weak: { color: 'bg-red-500', text: '弱', textColor: 'text-red-500' },
+    medium: { color: 'bg-orange-500', text: '中', textColor: 'text-orange-500' },
+    strong: { color: 'bg-green-600', text: '强', textColor: 'text-green-600' },
+  };
+  const c = config[strength];
+
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <div className="flex gap-1">
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className={`h-2 w-6 rounded-full transition-colors ${
+              i <= STRENGTH_LEVEL[strength] ? c.color : 'bg-gray-200'
+            }`}
+          />
+        ))}
+      </div>
+      <span className={`text-sm ${c.textColor}`}>{c.text}</span>
+    </div>
+  );
+}
+
 // --- Auth Page ---
 function AuthPage() {
   const user = useAuthStore((s) => s.user);
@@ -1126,6 +1206,9 @@ function AuthPage() {
   const [mode, setMode] = React.useState<'login' | 'register'>('login');
   const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [usernameError, setUsernameError] = React.useState('');
+  const [passwordError, setPasswordError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [needsConfirm, setNeedsConfirm] = React.useState(false);
@@ -1134,22 +1217,51 @@ function AuthPage() {
     if (user) navigate('/', { replace: true });
   }, [user, navigate]);
 
+  const isRegister = mode === 'register';
+  // 注册模式实时校验（用于输入框状态图标）
+  const usernameCheck = isRegister && username ? validateUsername(username) : null;
+  const passwordCheck = validatePassword(password);
+
+  const switchMode = (next: 'login' | 'register') => {
+    setMode(next);
+    setUsernameError('');
+    setPasswordError('');
+    setError('');
+    if (next === 'register') setNeedsConfirm(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setUsernameError('');
+    setPasswordError('');
 
-    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-      setError('用户名需 3-20 位字母、数字或下划线');
-      return;
-    }
-    if (password.length < 6) {
-      setError('密码至少 6 位');
-      return;
+    if (isRegister) {
+      const u = validateUsername(username);
+      if (!u.valid) {
+        setUsernameError(u.message);
+        return;
+      }
+      const p = validatePassword(password);
+      if (!p.valid) {
+        setPasswordError(p.message);
+        return;
+      }
+    } else {
+      // 登录只查非空：老账号规则与现有格式校验交给服务端，避免老用户被新规则挡住
+      if (!username) {
+        setUsernameError('请输入用户名');
+        return;
+      }
+      if (!password) {
+        setPasswordError('请输入密码');
+        return;
+      }
     }
 
     setLoading(true);
     try {
-      if (mode === 'login') {
+      if (!isRegister) {
         await login(username, password);
         navigate('/');
       } else {
@@ -1183,11 +1295,11 @@ function AuthPage() {
 
   return (
     <div className="mx-auto max-w-sm py-8">
-      <h1 className="mb-6 text-center text-2xl font-bold">{mode === 'login' ? '登录' : '注册'}</h1>
+      <h1 className="mb-6 text-center text-2xl font-bold">{isRegister ? '注册' : '登录'}</h1>
 
       <div className="mb-4 flex rounded-xl bg-creamdark p-1">
         <button
-          onClick={() => setMode('login')}
+          onClick={() => switchMode('login')}
           className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
             mode === 'login' ? 'bg-white shadow' : ''
           }`}
@@ -1195,7 +1307,7 @@ function AuthPage() {
           登录
         </button>
         <button
-          onClick={() => setMode('register')}
+          onClick={() => switchMode('register')}
           className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
             mode === 'register' ? 'bg-white shadow' : ''
           }`}
@@ -1211,27 +1323,87 @@ function AuthPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        <input
-          type="text"
-          placeholder="用户名"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
-        />
-        <input
-          type="password"
-          placeholder="密码"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
-        />
-        {error && <div className="text-sm text-red-500">{error}</div>}
+        <div>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="用户名（支持中文）"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                if (usernameError) setUsernameError('');
+              }}
+              className={`h-14 w-full rounded-2xl border-2 bg-white px-4 pr-12 text-lg outline-none transition-colors ${
+                usernameError
+                  ? 'border-red-400 bg-red-50'
+                  : usernameCheck?.valid
+                    ? 'border-green-500'
+                    : 'border-line focus:border-brand'
+              }`}
+            />
+            {usernameCheck && (
+              <Icon
+                icon={usernameCheck.valid ? 'mdi:check' : 'mdi:close'}
+                className={`absolute right-4 top-1/2 -translate-y-1/2 text-2xl ${
+                  usernameCheck.valid ? 'text-green-600' : 'text-red-400'
+                }`}
+                aria-hidden
+              />
+            )}
+          </div>
+          {usernameError && (
+            <p className="mt-1 flex items-center gap-1 text-sm text-red-500">
+              <Icon icon="mdi:alert-circle-outline" className="shrink-0 text-base" aria-hidden />
+              {usernameError}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="密码（6-20 位，含字母和数字）"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (passwordError) setPasswordError('');
+              }}
+              className={`h-14 w-full rounded-2xl border-2 bg-white px-4 pr-12 text-lg outline-none transition-colors ${
+                passwordError ? 'border-red-400 bg-red-50' : 'border-line focus:border-brand'
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-inksoft"
+              aria-label={showPassword ? '隐藏密码' : '显示密码'}
+            >
+              <Icon icon={showPassword ? 'mdi:eye-off-outline' : 'mdi:eye-outline'} className="text-xl" />
+            </button>
+          </div>
+          {isRegister && password && <PasswordStrength strength={passwordCheck.strength} />}
+          {passwordError && (
+            <p className="mt-1 flex items-center gap-1 text-sm text-red-500">
+              <Icon icon="mdi:alert-circle-outline" className="shrink-0 text-base" aria-hidden />
+              {passwordError}
+            </p>
+          )}
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-1 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500">
+            <Icon icon="mdi:alert-circle-outline" className="shrink-0 text-base" aria-hidden />
+            <span>{error}</span>
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={loading}
           className="w-full rounded-xl bg-brand py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
         >
-          {loading ? '处理中...' : mode === 'login' ? '登录' : '注册'}
+          {loading ? '处理中...' : isRegister ? '注册' : '登录'}
         </button>
       </form>
 
@@ -1251,6 +1423,11 @@ function OnboardingPage() {
     if (babies.length > 0) navigate('/', { replace: true });
   }, [babies, navigate]);
 
+  const handleSkip = () => {
+    useDataStore.getState().skipOnboarding();
+    navigate('/', { replace: true });
+  };
+
   return (
     <div className="flex flex-col items-center py-8 text-center">
       <Icon icon="mdi:baby-bottle-outline" className="text-6xl text-brand" />
@@ -1265,6 +1442,14 @@ function OnboardingPage() {
       <Link to="/auth" className="mt-4 text-sm text-inksoft underline">
         已有账号？登录同步云端
       </Link>
+
+      <button
+        onClick={handleSkip}
+        className="mt-2 flex items-center gap-1 rounded-xl px-6 py-3 text-base text-inksoft transition active:scale-95"
+      >
+        稍后再说
+        <Icon icon="mdi:arrow-right" className="text-lg" />
+      </button>
     </div>
   );
 }

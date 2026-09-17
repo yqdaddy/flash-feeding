@@ -8,7 +8,13 @@ export const supabase: SupabaseClient | null =
     ? createClient(url, anonKey)
     : null;
 
-export const pseudoEmail = (username: string): string =>
-  `${username.toLowerCase()}@users.feeding.local`;
+// 将用户名映射为 Supabase 可接受的虚拟邮箱。
+// 纯 ASCII 用户名保持原样（老账号登录不受影响）；
+// 含中文等非 ASCII 字符时做确定性转义，保证同一用户名始终映射到同一邮箱。
+export const pseudoEmail = (username: string): string => {
+  const lower = username.toLowerCase();
+  const local = /^[a-z0-9._-]+$/.test(lower) ? lower : `u_${encodeURIComponent(lower)}`;
+  return `${local}@users.feeding.local`;
+};
 
 export const isCloudConfigured = (): boolean => supabase !== null;
