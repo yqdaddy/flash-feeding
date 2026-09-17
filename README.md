@@ -54,8 +54,6 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 ## 截图
 
-*(待补充)*
-
 ![首页](docs/screenshots/home.png)
 ![对比页](docs/screenshots/compare.png)
 
