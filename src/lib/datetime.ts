@@ -75,3 +75,29 @@ export function dayLabel(d: Date): string {
   if (diff === 2) return '前天';
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
+
+export function isSameDate(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+export function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+export function weekdayCN(d: Date): string {
+  return WEEKDAYS[d.getDay()];
+}
+
+export function formatDateCN(d: Date): string {
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/** 用于 datetime-local 输入框的本地时间值（YYYY-MM-DDTHH:mm） */
+export function toLocalInputValue(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
