@@ -163,7 +163,7 @@ function BabySwitcher({
               className="flex h-8 w-8 items-center justify-center rounded-full text-lg"
               style={{ backgroundColor: `${b.color}22` }}
             >
-              {meta.emoji}
+              <Icon icon={meta.icon} className="text-lg" />
             </span>
             <span className="font-medium">{b.name}</span>
           </button>
@@ -173,7 +173,7 @@ function BabySwitcher({
         onClick={onAdd}
         className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-inksoft px-3 py-1.5 text-inksoft"
       >
-        <span className="text-lg">+</span>
+        <Icon icon="mdi:plus" className="text-lg" />
         <span>{babies.length === 0 ? '添加宝宝' : '添加'}</span>
       </button>
     </div>
@@ -215,7 +215,7 @@ function QuickActions({
         onClick={onDiaper}
         className="flex h-24 flex-col items-center justify-center rounded-2xl bg-[#EAF3EE] text-[#2F6B4F] transition active:scale-95"
       >
-        <Icon icon="mdi:baby-carriage-outline" className="text-3xl" />
+        <Icon icon="mdi:diaper-outline" className="text-3xl" />
         <span className="mt-1 text-base font-semibold">换尿布</span>
       </button>
       <button
@@ -335,7 +335,7 @@ function TodayStats({
                 className="flex h-10 w-10 items-center justify-center rounded-full text-xl"
                 style={{ backgroundColor: `${baby.color}22` }}
               >
-                {meta.emoji}
+                <Icon icon={meta.icon} className="text-lg" />
               </span>
               <div>
                 <div className="font-bold">{baby.name}</div>
@@ -470,7 +470,7 @@ function Timeline({
               className="flex h-8 w-8 items-center justify-center rounded-full text-lg"
               style={{ backgroundColor: `${baby.color}22` }}
             >
-              {meta.emoji}
+              <Icon icon={meta.icon} className="text-lg" />
             </span>
             <span className="text-lg">{icon}</span>
             <span className="flex-1 font-medium">{text}</span>
@@ -484,7 +484,7 @@ function Timeline({
               className="text-inksoft hover:text-red-500"
               aria-label="删除"
             >
-              ✕
+              <Icon icon="mdi:close" className="text-lg" />
             </button>
           </div>
         );
@@ -540,7 +540,7 @@ function FeedingSheet({
           const m = getAvatarMeta(b.avatar);
           return (
             <span key={b.id} className="ml-2">
-              {m.emoji} {b.name}
+              <Icon icon={m.icon} className="text-lg" /> {b.name}
             </span>
           );
         })}
@@ -597,16 +597,16 @@ function FeedingSheet({
       <div className="mb-4 flex items-center justify-center gap-4">
         <button
           onClick={() => adjustTime(-15)}
-          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+          className="flex items-center gap-1 rounded-lg bg-creamdark px-3 py-2 text-sm"
         >
-          -15分
+          <Icon icon="mdi:minus" className="inline" /> 15分
         </button>
         <div className="text-xl font-bold tabular-nums">{formatTime(time)}</div>
         <button
           onClick={() => adjustTime(15)}
-          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+          className="flex items-center gap-1 rounded-lg bg-creamdark px-3 py-2 text-sm"
         >
-          +15分
+          <Icon icon="mdi:plus" className="inline" /> 15分
         </button>
       </div>
 
@@ -666,7 +666,7 @@ function DiaperSheet({
           const m = getAvatarMeta(b.avatar);
           return (
             <span key={b.id} className="ml-2">
-              {m.emoji} {b.name}
+              <Icon icon={m.icon} className="text-lg" /> {b.name}
             </span>
           );
         })}
@@ -692,16 +692,16 @@ function DiaperSheet({
       <div className="mb-4 flex items-center justify-center gap-4">
         <button
           onClick={() => adjustTime(-15)}
-          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+          className="flex items-center gap-1 rounded-lg bg-creamdark px-3 py-2 text-sm"
         >
-          -15分
+          <Icon icon="mdi:minus" className="inline" /> 15分
         </button>
         <div className="text-xl font-bold tabular-nums">{formatTime(time)}</div>
         <button
           onClick={() => adjustTime(15)}
-          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+          className="flex items-center gap-1 rounded-lg bg-creamdark px-3 py-2 text-sm"
         >
-          +15分
+          <Icon icon="mdi:plus" className="inline" /> 15分
         </button>
       </div>
 
@@ -734,7 +734,7 @@ function Sheet({
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold">{title}</h2>
           <button onClick={onClose} className="text-inksoft" aria-label="关闭">
-            ✕
+            <Icon icon="mdi:close" className="text-lg" />
           </button>
         </div>
         {children}
@@ -790,7 +790,7 @@ function BabyForm({ initial, onClose }: { initial?: Baby; onClose: () => void })
             className="flex h-14 w-14 items-center justify-center rounded-full text-3xl"
             style={{ backgroundColor: `${previewAvatar.color}22` }}
           >
-            {previewAvatar.emoji}
+            <Icon icon={previewAvatar.icon} className="text-xl" />
           </span>
           <div>
             <div className="text-sm text-inksoft">系统为宝宝分配的形象</div>
@@ -961,7 +961,7 @@ function ComparePage() {
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg"
                 style={{ backgroundColor: `${baby.color}22` }}
               >
-                {meta.emoji}
+                <Icon icon={meta.icon} className="text-lg" />
               </span>
               <div className="flex-1">
                 <div className="mb-1 flex justify-between text-sm">
@@ -1049,7 +1049,7 @@ function ManagePage() {
           onClick={() => setShowAdd(true)}
           className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white"
         >
-          + 添加宝宝
+          <Icon icon="mdi:plus" className="mr-1 inline" /> 添加宝宝
         </button>
       </div>
 
@@ -1067,7 +1067,7 @@ function ManagePage() {
                 className="flex h-10 w-10 items-center justify-center rounded-full text-xl"
                 style={{ backgroundColor: `${baby.color}22` }}
               >
-                {meta.emoji}
+                <Icon icon={meta.icon} className="text-lg" />
               </span>
               <div className="flex-1">
                 <div className="font-bold">{baby.name}</div>
@@ -1079,7 +1079,7 @@ function ManagePage() {
                 onClick={() => setEditing(baby)}
                 className="rounded-lg border border-line px-3 py-1.5 text-sm"
               >
-                编辑
+                <Icon icon="mdi:pencil" className="mr-1 inline text-base" /> 编辑
               </button>
               <button
                 onClick={() => {
@@ -1089,7 +1089,7 @@ function ManagePage() {
                 }}
                 className="rounded-lg border border-line px-3 py-1.5 text-sm text-red-500"
               >
-                删除
+                <Icon icon="mdi:delete" className="mr-1 inline text-base" /> 删除
               </button>
             </div>
           );
@@ -1489,7 +1489,7 @@ function BabyFormInline() {
           className="flex h-12 w-12 items-center justify-center rounded-full text-2xl"
           style={{ backgroundColor: `${previewAvatar.color}22` }}
         >
-          {previewAvatar.emoji}
+          <Icon icon={previewAvatar.icon} className="text-xl" />
         </span>
         <span className="text-sm" style={{ color: previewAvatar.color }}>
           {previewAvatar.label}
