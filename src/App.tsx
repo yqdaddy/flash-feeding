@@ -1,0 +1,1493 @@
+import React, { useEffect, useReducer } from 'react';
+import { HashRouter, Link, Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
+import { Icon } from '@iconify/react';
+import { useAuthStore } from './stores/authStore';
+import { useDataStore } from './stores/dataStore';
+import { useToastStore } from './stores/toastStore';
+import { isCloudConfigured } from './lib/supabase';
+import { getAvatarMeta, pickUnusedAvatar } from './lib/avatar';
+import { monthAge } from './lib/datetime';
+import { getFeedingAdvice, DISCLAIMER } from './lib/rules';
+import { lastNDays, milkByDay, dayLabel } from './lib/stats';
+import type { Baby, Diaper, DiaperType, Feeding, FeedingType, Gender, Sleep } from './types';
+
+// --- Pages ---
+function HomePage() {
+  const babies = useDataStore((s) => s.babies);
+  const activeBabyId = useDataStore((s) => s.activeBabyId);
+  const syncMode = useDataStore((s) => s.syncMode);
+  const toggleSyncMode = useDataStore((s) => s.toggleSyncMode);
+  const addFeeding = useDataStore((s) => s.addFeeding);
+  const addDiaper = useDataStore((s) => s.addDiaper);
+  const startSleep = useDataStore((s) => s.startSleep);
+  const endSleep = useDataStore((s) => s.endSleep);
+  const sleeps = useDataStore((s) => s.sleeps);
+  const feedings = useDataStore((s) => s.feedings);
+  const diapers = useDataStore((s) => s.diapers);
+  const setActiveBaby = useDataStore((s) => s.setActiveBaby);
+  const deleteRecord = useDataStore((s) => s.deleteRecord);
+
+  const [sheet, setSheet] = React.useState<null | 'feeding' | 'diaper'>(null);
+  const [showAddBaby, setShowAddBaby] = React.useState(false);
+  const [, forceTick] = useReducer((x) => x + 1, 0);
+
+  const activeBaby = babies.find((b) => b.id === activeBabyId);
+  const targets = syncMode ? babies : activeBaby ? [activeBaby] : [];
+
+  const ongoingSleep = sleeps.find(
+    (s) => s.end_time === null && targets.some((t) => t.id === s.baby_id)
+  );
+
+  useEffect(() => {
+    if (!ongoingSleep) return;
+    const t = setInterval(forceTick, 1000);
+    return () => clearInterval(t);
+  }, [ongoingSleep]);
+
+  const sleepElapsed = ongoingSleep
+    ? Math.floor((Date.now() - new Date(ongoingSleep.start_time).getTime()) / 1000)
+    : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Baby Switcher */}
+      <BabySwitcher
+        babies={babies}
+        activeId={activeBabyId}
+        onSelect={setActiveBaby}
+        onAdd={() => setShowAddBaby(true)}
+      />
+
+      {/* Sync Mode Toggle */}
+      {babies.length > 1 && (
+        <div className="flex items-center justify-between rounded-xl bg-white p-3">
+          <div>
+            <div className="font-medium">同步记录模式</div>
+            <div className="text-sm text-inksoft">一次操作，所有宝宝都记上</div>
+          </div>
+          <button
+            onClick={toggleSyncMode}
+            role="switch"
+            aria-checked={syncMode}
+            className={`relative h-7 w-12 rounded-full transition ${
+              syncMode ? 'bg-brand' : 'bg-line'
+            }`}
+          >
+            <span
+              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+                syncMode ? 'left-6' : 'left-1'
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
+      {/* Quick Actions */}
+      <QuickActions
+        ongoingSleep={!!ongoingSleep}
+        sleepElapsed={sleepElapsed}
+        onFeeding={() => setSheet('feeding')}
+        onDiaper={() => setSheet('diaper')}
+        onSleep={startSleep}
+        onEndSleep={endSleep}
+      />
+
+      {/* Today Stats */}
+      <TodayStats babies={babies} feedings={feedings} diapers={diapers} sleeps={sleeps} />
+
+      {/* Timeline */}
+      <Timeline
+        feedings={feedings}
+        diapers={diapers}
+        sleeps={sleeps}
+        babies={babies}
+        onDelete={deleteRecord}
+      />
+
+      {/* Sheets */}
+      {sheet === 'feeding' && (
+        <FeedingSheet babies={targets} onClose={() => setSheet(null)} onSave={addFeeding} />
+      )}
+      {sheet === 'diaper' && (
+        <DiaperSheet babies={targets} onClose={() => setSheet(null)} onSave={addDiaper} />
+      )}
+      {showAddBaby && <BabyForm onClose={() => setShowAddBaby(false)} />}
+    </div>
+  );
+}
+
+// --- BabySwitcher ---
+function BabySwitcher({
+  babies,
+  activeId,
+  onSelect,
+  onAdd,
+}: {
+  babies: Baby[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+      {babies.map((b) => {
+        const meta = getAvatarMeta(b.avatar);
+        const isActive = b.id === activeId;
+        return (
+          <button
+            key={b.id}
+            onClick={() => onSelect(b.id)}
+            className={`flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-base transition ${
+              isActive ? 'ring-2 ring-offset-1' : 'bg-white border border-line'
+            }`}
+            style={{ borderColor: isActive ? b.color : undefined }}
+          >
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded-full text-lg"
+              style={{ backgroundColor: `${b.color}22` }}
+            >
+              {meta.emoji}
+            </span>
+            <span className="font-medium">{b.name}</span>
+          </button>
+        );
+      })}
+      <button
+        onClick={onAdd}
+        className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-inksoft px-3 py-1.5 text-inksoft"
+      >
+        <span className="text-lg">+</span>
+        <span>添加</span>
+      </button>
+    </div>
+  );
+}
+
+// --- QuickActions ---
+function QuickActions({
+  ongoingSleep,
+  sleepElapsed,
+  onFeeding,
+  onDiaper,
+  onSleep,
+  onEndSleep,
+}: {
+  ongoingSleep: boolean;
+  sleepElapsed: number;
+  onFeeding: () => void;
+  onDiaper: () => void;
+  onSleep: () => void;
+  onEndSleep: () => void;
+}) {
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      <button
+        onClick={onFeeding}
+        className="flex h-24 flex-col items-center justify-center rounded-2xl bg-[#FFF1E4] text-[#B4541F] transition active:scale-95"
+      >
+        <Icon icon="mdi:baby-bottle-outline" className="text-3xl" />
+        <span className="mt-1 text-base font-semibold">喂奶</span>
+      </button>
+      <button
+        onClick={onDiaper}
+        className="flex h-24 flex-col items-center justify-center rounded-2xl bg-[#EAF3EE] text-[#2F6B4F] transition active:scale-95"
+      >
+        <Icon icon="mdi:baby-carriage-outline" className="text-3xl" />
+        <span className="mt-1 text-base font-semibold">换尿布</span>
+      </button>
+      <button
+        onClick={ongoingSleep ? onEndSleep : onSleep}
+        className="flex h-24 flex-col items-center justify-center rounded-2xl bg-[#EAF1F8] text-[#33597F] transition active:scale-95"
+      >
+        {ongoingSleep ? (
+          <Icon icon="mdi:timer-outline" className="text-3xl" />
+        ) : (
+          <Icon icon="mdi:moon-waning-crescent" className="text-3xl" />
+        )}
+        <span className="mt-1 text-base font-semibold">
+          {ongoingSleep ? formatTime(sleepElapsed) : '睡觉'}
+        </span>
+        {ongoingSleep && <span className="text-xs">点击结束</span>}
+      </button>
+    </div>
+  );
+}
+
+// --- TodayStats ---
+function TodayStats({
+  babies,
+  feedings,
+  diapers,
+  sleeps,
+}: {
+  babies: Baby[];
+  feedings: Feeding[];
+  diapers: Diaper[];
+  sleeps: Sleep[];
+}) {
+  const now = new Date();
+
+  const getTodayTotal = (babyId: string) => {
+    return feedings
+      .filter((f) => {
+        const d = new Date(f.fed_at);
+        return (
+          f.baby_id === babyId &&
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate()
+        );
+      })
+      .reduce((s, f) => s + f.amount_ml, 0);
+  };
+
+  const getTodayCount = (babyId: string) => {
+    return feedings.filter((f) => {
+      const d = new Date(f.fed_at);
+      return (
+        f.baby_id === babyId &&
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    }).length;
+  };
+
+  const getTodayDiapers = (babyId: string) => {
+    return diapers.filter((d) => {
+      const dt = new Date(d.changed_at);
+      return (
+        d.baby_id === babyId &&
+        dt.getFullYear() === now.getFullYear() &&
+        dt.getMonth() === now.getMonth() &&
+        dt.getDate() === now.getDate()
+      );
+    }).length;
+  };
+
+  const getTodaySleepMins = (babyId: string) => {
+    return sleeps
+      .filter((s) => {
+        const st = new Date(s.start_time);
+        return (
+          s.baby_id === babyId &&
+          st.getFullYear() === now.getFullYear() &&
+          st.getMonth() === now.getMonth() &&
+          st.getDate() === now.getDate()
+        );
+      })
+      .reduce((sum, s) => {
+        if (s.duration_min != null) return sum + s.duration_min;
+        return sum + Math.max(0, Math.floor((Date.now() - new Date(s.start_time).getTime()) / 60000));
+      }, 0);
+  };
+
+  const levelStyles: Record<string, string> = {
+    empty: 'bg-[#F5F1EA] text-inksoft',
+    low: 'bg-[#FBF3E1] text-[#8A6414]',
+    ok: 'bg-[#E9F4EC] text-[#2F6B4F]',
+    high: 'bg-[#FDEBDD] text-[#A24E22]',
+  };
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-bold">今日统计</h2>
+      {babies.map((baby) => {
+        const meta = getAvatarMeta(baby.avatar);
+        const age = monthAge(baby.birth_date);
+        const totalMl = getTodayTotal(baby.id);
+        const count = getTodayCount(baby.id);
+        const diaperCount = getTodayDiapers(baby.id);
+        const sleepMins = getTodaySleepMins(baby.id);
+        const advice = getFeedingAdvice(baby, totalMl, count);
+
+        return (
+          <div
+            key={baby.id}
+            className="rounded-2xl bg-white p-4"
+            style={{ borderLeft: `6px solid ${baby.color}` }}
+          >
+            <div className="mb-3 flex items-center gap-2">
+              <span
+                className="flex h-10 w-10 items-center justify-center rounded-full text-xl"
+                style={{ backgroundColor: `${baby.color}22` }}
+              >
+                {meta.emoji}
+              </span>
+              <div>
+                <div className="font-bold">{baby.name}</div>
+                <div className="text-sm text-inksoft">{age.label}</div>
+              </div>
+            </div>
+            <div className="mb-3 grid grid-cols-4 gap-2 text-center">
+              <div>
+                <div className="text-xl font-bold">{totalMl}</div>
+                <div className="text-xs text-inksoft">奶量ml</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold">{count}</div>
+                <div className="text-xs text-inksoft">喂奶次</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold">{diaperCount}</div>
+                <div className="text-xs text-inksoft">换尿布</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold">{sleepMins}</div>
+                <div className="text-xs text-inksoft">睡眠分</div>
+              </div>
+            </div>
+            <div className={`rounded-lg px-3 py-2 text-sm ${levelStyles[advice.level]}`}>
+              <span className="font-medium">{advice.title}</span>
+              <span className="ml-1">{advice.detail}</span>
+            </div>
+            <div className="mt-1 text-xs text-inksoft">{DISCLAIMER}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Timeline ---
+function Timeline({
+  feedings,
+  diapers,
+  sleeps,
+  babies,
+  onDelete,
+}: {
+  feedings: Feeding[];
+  diapers: Diaper[];
+  sleeps: Sleep[];
+  babies: Baby[];
+  onDelete: (kind: 'feeding' | 'diaper' | 'sleep', id: string) => void;
+}) {
+  const now = new Date();
+  interface Entry {
+    kind: 'feeding' | 'diaper' | 'sleep';
+    id: string;
+    babyId: string;
+    at: string;
+    data: Feeding | Diaper | Sleep;
+  }
+
+  const entries: Entry[] = [];
+
+  for (const f of feedings) {
+    const d = new Date(f.fed_at);
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+      entries.push({ kind: 'feeding', id: f.id, babyId: f.baby_id, at: f.fed_at, data: f });
+    }
+  }
+  for (const d of diapers) {
+    const dt = new Date(d.changed_at);
+    if (dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate()) {
+      entries.push({ kind: 'diaper', id: d.id, babyId: d.baby_id, at: d.changed_at, data: d });
+    }
+  }
+  for (const s of sleeps) {
+    const st = new Date(s.start_time);
+    if (st.getFullYear() === now.getFullYear() && st.getMonth() === now.getMonth() && st.getDate() === now.getDate()) {
+      entries.push({ kind: 'sleep', id: s.id, babyId: s.baby_id, at: s.start_time, data: s });
+    }
+  }
+
+  entries.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-xl bg-white p-6 text-center text-inksoft">
+        今天还没有记录，喂一顿吧 <Icon icon="mdi:baby-bottle-outline" className="inline text-lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-lg font-bold">今日时间线</h2>
+      {entries.map((entry) => {
+        const baby = babies.find((b) => b.id === entry.babyId);
+        if (!baby) return null;
+        const meta = getAvatarMeta(baby.avatar);
+        const time = new Date(entry.at);
+        const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+
+        let icon: React.ReactNode;
+        let text: string;
+        if (entry.kind === 'feeding') {
+          const f = entry.data as Feeding;
+          icon = f.type === 'breast' ? (
+            <Icon icon="mdi:mother-heart" className="text-lg" />
+          ) : (
+            <Icon icon="mdi:baby-bottle-outline" className="text-lg" />
+          );
+          text = `${f.type === 'breast' ? '母乳' : '奶粉'} ${f.amount_ml}ml`;
+        } else if (entry.kind === 'diaper') {
+          const d = entry.data as Diaper;
+          icon = <Icon icon="mdi:baby-carriage-outline" className="text-lg" />;
+          text = d.type === 'wet' ? '湿尿布' : d.type === 'solid' ? '便便' : '混合';
+        } else {
+          const s = entry.data as Sleep;
+          icon = <Icon icon="mdi:moon-waning-crescent" className="text-lg" />;
+          if (s.end_time) {
+            text = `睡了 ${s.duration_min ?? 0} 分钟`;
+          } else {
+            const elapsed = Math.floor((Date.now() - new Date(s.start_time).getTime()) / 60000);
+            text = `睡觉中... ${elapsed}分钟`;
+          }
+        }
+
+        return (
+          <div
+            key={`${entry.kind}-${entry.id}`}
+            className="flex items-center gap-3 rounded-xl bg-white px-4 py-3"
+          >
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded-full text-lg"
+              style={{ backgroundColor: `${baby.color}22` }}
+            >
+              {meta.emoji}
+            </span>
+            <span className="text-lg">{icon}</span>
+            <span className="flex-1 font-medium">{text}</span>
+            <span className="text-sm text-inksoft">{timeStr}</span>
+            <button
+              onClick={() => {
+                if (window.confirm('删除这条记录？')) {
+                  void onDelete(entry.kind, entry.id);
+                }
+              }}
+              className="text-inksoft hover:text-red-500"
+              aria-label="删除"
+            >
+              ✕
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- FeedingSheet ---
+function FeedingSheet({
+  babies,
+  onClose,
+  onSave,
+}: {
+  babies: Baby[];
+  onClose: () => void;
+  onSave: (type: FeedingType, amountMl: number, fedAt: string) => Promise<void>;
+}) {
+  const [type, setType] = React.useState<FeedingType>('formula');
+  const [amount, setAmount] = React.useState<number | null>(null);
+  const [custom, setCustom] = React.useState('');
+  const [time, setTime] = React.useState(new Date());
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const QUICK = [30, 60, 90, 120];
+
+  const handleSave = async () => {
+    const ml = amount ?? parseInt(custom, 10);
+    if (!ml || ml <= 0) {
+      setError('请选择或输入奶量');
+      return;
+    }
+    setSaving(true);
+    await onSave(type, ml, time.toISOString());
+    setSaving(false);
+    onClose();
+  };
+
+  const adjustTime = (mins: number) => {
+    setTime(new Date(time.getTime() + mins * 60000));
+  };
+
+  const formatTime = (d: Date) => {
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  return (
+    <Sheet title="喂奶记录" onClose={onClose}>
+      <div className="mb-4 text-sm text-inksoft">
+        记录给：
+        {babies.map((b) => {
+          const m = getAvatarMeta(b.avatar);
+          return (
+            <span key={b.id} className="ml-2">
+              {m.emoji} {b.name}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => setType('breast')}
+          className={`flex-1 rounded-xl py-3 text-base font-medium transition ${
+            type === 'breast' ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+          }`}
+        >
+          <Icon icon="mdi:mother-heart" className="mr-1 inline text-lg" /> 母乳
+        </button>
+        <button
+          onClick={() => setType('formula')}
+          className={`flex-1 rounded-xl py-3 text-base font-medium transition ${
+            type === 'formula' ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+          }`}
+        >
+          <Icon icon="mdi:baby-bottle-outline" className="mr-1 inline text-lg" /> 奶粉
+        </button>
+      </div>
+
+      <div className="mb-3 grid grid-cols-4 gap-2">
+        {QUICK.map((ml) => (
+          <button
+            key={ml}
+            onClick={() => {
+              setAmount(ml);
+              setCustom('');
+            }}
+            className={`rounded-xl py-3 text-base font-medium transition ${
+              amount === ml ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+            }`}
+          >
+            {ml}ml
+          </button>
+        ))}
+      </div>
+
+      <input
+        type="number"
+        inputMode="numeric"
+        placeholder="自定义 (ml)"
+        value={custom}
+        onChange={(e) => {
+          setCustom(e.target.value);
+          setAmount(null);
+        }}
+        className="mb-3 w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+      />
+
+      <div className="mb-4 flex items-center justify-center gap-4">
+        <button
+          onClick={() => adjustTime(-15)}
+          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+        >
+          -15分
+        </button>
+        <div className="text-xl font-bold tabular-nums">{formatTime(time)}</div>
+        <button
+          onClick={() => adjustTime(15)}
+          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+        >
+          +15分
+        </button>
+      </div>
+
+      {error && <div className="mb-2 text-center text-sm text-red-500">{error}</div>}
+
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full rounded-xl bg-brand py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+      >
+        {saving ? '保存中...' : '保存记录'}
+      </button>
+    </Sheet>
+  );
+}
+
+// --- DiaperSheet ---
+function DiaperSheet({
+  babies,
+  onClose,
+  onSave,
+}: {
+  babies: Baby[];
+  onClose: () => void;
+  onSave: (type: DiaperType, changedAt: string) => Promise<void>;
+}) {
+  const [type, setType] = React.useState<DiaperType>('wet');
+  const [time, setTime] = React.useState(new Date());
+  const [saving, setSaving] = React.useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(type, time.toISOString());
+    setSaving(false);
+    onClose();
+  };
+
+  const adjustTime = (mins: number) => {
+    setTime(new Date(time.getTime() + mins * 60000));
+  };
+
+  const formatTime = (d: Date) => {
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const options: Array<{ value: DiaperType; label: string; icon: React.ReactNode }> = [
+    { value: 'wet', label: '湿湿', icon: <Icon icon="mdi:water-outline" className="text-2xl" /> },
+    { value: 'solid', label: '便便', icon: <Icon icon="mdi:emoticon-poop-outline" className="text-2xl" /> },
+    { value: 'mixed', label: '混合', icon: <Icon icon="mdi:blur" className="text-2xl" /> },
+  ];
+
+  return (
+    <Sheet title="换尿布" onClose={onClose}>
+      <div className="mb-4 text-sm text-inksoft">
+        记录给：
+        {babies.map((b) => {
+          const m = getAvatarMeta(b.avatar);
+          return (
+            <span key={b.id} className="ml-2">
+              {m.emoji} {b.name}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setType(opt.value)}
+            className={`flex h-20 flex-col items-center justify-center rounded-xl text-lg transition ${
+              type === opt.value
+                ? 'bg-brand text-white ring-2 ring-brand ring-offset-2'
+                : 'bg-creamdark text-ink'
+            }`}
+          >
+            {opt.icon}
+            <span className="mt-1 font-medium">{opt.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 flex items-center justify-center gap-4">
+        <button
+          onClick={() => adjustTime(-15)}
+          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+        >
+          -15分
+        </button>
+        <div className="text-xl font-bold tabular-nums">{formatTime(time)}</div>
+        <button
+          onClick={() => adjustTime(15)}
+          className="rounded-lg bg-creamdark px-3 py-2 text-sm"
+        >
+          +15分
+        </button>
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full rounded-xl bg-brand py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+      >
+        {saving ? '保存中...' : '保存记录'}
+      </button>
+    </Sheet>
+  );
+}
+
+// --- Sheet ---
+function Sheet({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-t-3xl bg-white p-5 pb-8 animate-sheet-up">
+        <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-line" />
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">{title}</h2>
+          <button onClick={onClose} className="text-inksoft" aria-label="关闭">
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// --- BabyForm ---
+function BabyForm({ initial, onClose }: { initial?: Baby; onClose: () => void }) {
+  const addBaby = useDataStore((s) => s.addBaby);
+  const updateBaby = useDataStore((s) => s.updateBaby);
+  const babies = useDataStore((s) => s.babies);
+
+  const [name, setName] = React.useState(initial?.name ?? '');
+  const [gender, setGender] = React.useState<Gender>(initial?.gender ?? 'male');
+  const [birthDate, setBirthDate] = React.useState(initial?.birth_date ?? '');
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const isEdit = !!initial;
+
+  const previewAvatar = initial
+    ? getAvatarMeta(initial.avatar)
+    : pickUnusedAvatar(babies.map((b) => b.avatar));
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('请输入宝宝昵称');
+      return;
+    }
+    if (!birthDate) {
+      setError('请选择出生日期');
+      return;
+    }
+    setSaving(true);
+    if (isEdit && initial) {
+      await updateBaby(initial.id, { name, gender, birth_date: birthDate });
+    } else {
+      await addBaby({ name: name.trim(), gender, birth_date: birthDate });
+    }
+    setSaving(false);
+    onClose();
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+
+  return (
+    <Sheet title={isEdit ? '编辑宝宝' : '添加宝宝'} onClose={onClose}>
+      {!isEdit && (
+        <div className="mb-4 flex items-center justify-center gap-3">
+          <span
+            className="flex h-14 w-14 items-center justify-center rounded-full text-3xl"
+            style={{ backgroundColor: `${previewAvatar.color}22` }}
+          >
+            {previewAvatar.emoji}
+          </span>
+          <div>
+            <div className="text-sm text-inksoft">系统为宝宝分配的形象</div>
+            <div className="font-medium" style={{ color: previewAvatar.color }}>
+              {previewAvatar.label}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <label className="mb-3 block">
+        <span className="mb-1 block text-sm text-inksoft">昵称</span>
+        <input
+          type="text"
+          maxLength={12}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="宝宝的小名"
+          className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+        />
+      </label>
+
+      <div className="mb-3">
+        <span className="mb-1 block text-sm text-inksoft">性别</span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setGender('male')}
+            className={`flex-1 rounded-xl py-3 text-base font-medium transition ${
+              gender === 'male' ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+            }`}
+          >
+            <Icon icon="mdi:baby-face-outline" className="mr-1 inline" /> 男宝
+          </button>
+          <button
+            onClick={() => setGender('female')}
+            className={`flex-1 rounded-xl py-3 text-base font-medium transition ${
+              gender === 'female' ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+            }`}
+          >
+            <Icon icon="mdi:baby-face-outline" className="mr-1 inline" /> 女宝
+          </button>
+        </div>
+      </div>
+
+      <label className="mb-4 block">
+        <span className="mb-1 block text-sm text-inksoft">出生日期</span>
+        <input
+          type="date"
+          max={today}
+          value={birthDate}
+          onChange={(e) => setBirthDate(e.target.value)}
+          className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+        />
+      </label>
+
+      {error && <div className="mb-2 text-center text-sm text-red-500">{error}</div>}
+
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full rounded-xl bg-brand py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+      >
+        {saving ? '保存中...' : '保存'}
+      </button>
+    </Sheet>
+  );
+}
+
+// --- Compare Page ---
+function ComparePage() {
+  const babies = useDataStore((s) => s.babies);
+  const feedings = useDataStore((s) => s.feedings);
+
+  const [aId, setAId] = React.useState(babies[0]?.id ?? '');
+  const [bId, setBId] = React.useState(babies[1]?.id ?? '');
+
+  useEffect(() => {
+    if (!aId && babies[0]) setAId(babies[0].id);
+    if (!bId && babies[1]) setBId(babies[1].id);
+  }, [babies, aId, bId]);
+
+  if (babies.length < 2) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <Icon icon="mdi:baby-face-outline" className="text-4xl text-inksoft" />
+        <p className="mt-4 text-lg text-inksoft">添加第二个宝宝后解锁对比功能</p>
+      </div>
+    );
+  }
+
+  const babyA = babies.find((b) => b.id === aId);
+  const babyB = babies.find((b) => b.id === bId);
+
+  if (!babyA || !babyB) return null;
+
+  const metaA = getAvatarMeta(babyA.avatar);
+  const metaB = getAvatarMeta(babyB.avatar);
+
+  const now = new Date();
+  const todayMl = (babyId: string) => {
+    return feedings
+      .filter((f) => {
+        const d = new Date(f.fed_at);
+        return (
+          f.baby_id === babyId &&
+          d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate()
+        );
+      })
+      .reduce((s, f) => s + f.amount_ml, 0);
+  };
+
+  const mlA = todayMl(babyA.id);
+  const mlB = todayMl(babyB.id);
+  const maxMl = Math.max(1, mlA, mlB);
+
+  const days = lastNDays(7);
+  const seriesA = milkByDay(feedings, babyA.id, days);
+  const seriesB = milkByDay(feedings, babyB.id, days);
+  const maxSeries = Math.max(1, ...seriesA, ...seriesB);
+
+  const diff = Math.abs(mlA - mlB);
+  const minMl = Math.min(mlA, mlB) || 1;
+  const pct = mlA === 0 && mlB === 0 ? 0 : Math.round((diff / minMl) * 100);
+  const larger = mlA > mlB ? babyA : mlB > mlA ? babyB : null;
+  const largerMeta = larger ? getAvatarMeta(larger.avatar) : null;
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-xl font-bold">双宝对比</h1>
+
+      <div className="flex gap-2">
+        <select
+          value={aId}
+          onChange={(e) => setAId(e.target.value)}
+          className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-base"
+        >
+          {babies.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        <span className="flex items-center text-inksoft">VS</span>
+        <select
+          value={bId}
+          onChange={(e) => setBId(e.target.value)}
+          className="flex-1 rounded-xl border border-line bg-white px-3 py-2 text-base"
+        >
+          {babies.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4">
+        <h2 className="mb-3 font-bold">今日奶量</h2>
+        <div className="space-y-3">
+          {[
+            { baby: babyA, meta: metaA, ml: mlA },
+            { baby: babyB, meta: metaB, ml: mlB },
+          ].map(({ baby, meta, ml }) => (
+            <div key={baby.id} className="flex items-center gap-3">
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg"
+                style={{ backgroundColor: `${baby.color}22` }}
+              >
+                {meta.emoji}
+              </span>
+              <div className="flex-1">
+                <div className="mb-1 flex justify-between text-sm">
+                  <span>{baby.name}</span>
+                  <span className="font-bold">{ml} ml</span>
+                </div>
+                <div className="h-4 rounded-full bg-creamdark">
+                  <div
+                    className="h-full rounded-full transition"
+                    style={{ width: `${(ml / maxMl) * 100}%`, backgroundColor: baby.color }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {pct > 20 && largerMeta && (
+          <div className="mt-3 rounded-lg bg-[#FBF3E1] px-3 py-2 text-sm text-[#8A6414]">
+            {largerMeta.label}今天比另一宝多喝约 {pct}%，差距有点明显，留意一下
+          </div>
+        )}
+        {pct > 0 && pct <= 20 && (
+          <div className="mt-3 rounded-lg bg-[#E9F4EC] px-3 py-2 text-sm text-[#2F6B4F]">
+            两个宝宝今天奶量接近，节奏很同步
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl bg-white p-4">
+        <h2 className="mb-3 font-bold">近 7 天趋势</h2>
+        <div className="mb-2 flex gap-4 text-sm">
+          <span className="flex items-center gap-1">
+            <span className="h-3 w-3 rounded" style={{ backgroundColor: babyA.color }} />
+            {babyA.name}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-3 w-3 rounded" style={{ backgroundColor: babyB.color }} />
+            {babyB.name}
+          </span>
+        </div>
+        <svg viewBox="0 0 320 140" className="w-full" role="img" aria-label="近7天奶量趋势图">
+          {days.map((d, i) => {
+            const xBase = 10 + i * 44;
+            const valA = seriesA[i];
+            const valB = seriesB[i];
+            const hA = Math.max(2, (valA / maxSeries) * 90);
+            const hB = Math.max(2, (valB / maxSeries) * 90);
+            const yA = 120 - hA;
+            const yB = 120 - hB;
+            return (
+              <g key={i}>
+                <title>
+                  {dayLabel(d)}: {babyA.name} {valA}ml / {babyB.name} {valB}ml
+                </title>
+                <rect x={xBase} y={yA} width="12" height={hA} rx="2" fill={babyA.color} />
+                <rect x={xBase + 16} y={yB} width="12" height={hB} rx="2" fill={babyB.color} />
+                <text x={xBase + 14} y="134" textAnchor="middle" fontSize="10" fill="#7A6C5D">
+                  {dayLabel(d)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// --- Manage Page ---
+function ManagePage() {
+  const babies = useDataStore((s) => s.babies);
+  const deleteBaby = useDataStore((s) => s.deleteBaby);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const cloudOk = isCloudConfigured();
+
+  const [editing, setEditing] = React.useState<Baby | null>(null);
+  const [showAdd, setShowAdd] = React.useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">宝宝管理</h1>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white"
+        >
+          + 添加宝宝
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {babies.map((baby) => {
+          const meta = getAvatarMeta(baby.avatar);
+          const age = monthAge(baby.birth_date);
+          return (
+            <div
+              key={baby.id}
+              className="flex items-center gap-3 rounded-xl bg-white p-3"
+              style={{ borderLeft: `4px solid ${baby.color}` }}
+            >
+              <span
+                className="flex h-10 w-10 items-center justify-center rounded-full text-xl"
+                style={{ backgroundColor: `${baby.color}22` }}
+              >
+                {meta.emoji}
+              </span>
+              <div className="flex-1">
+                <div className="font-bold">{baby.name}</div>
+                <div className="text-sm text-inksoft">
+                  {baby.gender === 'male' ? '男宝' : '女宝'} · {age.label}
+                </div>
+              </div>
+              <button
+                onClick={() => setEditing(baby)}
+                className="rounded-lg border border-line px-3 py-1.5 text-sm"
+              >
+                编辑
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm(`确定删除「${baby.name}」吗？TA 的所有记录也会一起删除`)) {
+                    void deleteBaby(baby.id);
+                  }
+                }}
+                className="rounded-lg border border-line px-3 py-1.5 text-sm text-red-500"
+              >
+                删除
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rounded-2xl bg-white p-4">
+        <h2 className="mb-3 font-bold">账号与数据</h2>
+        {!cloudOk && <div className="text-sm text-inksoft">未配置云端服务，数据保存在本机</div>}
+        {cloudOk && user && (
+          <div className="space-y-2">
+            <div className="text-sm">
+              已登录：<span className="font-medium">{user.username}</span>
+            </div>
+            <div className="text-sm text-inksoft">数据自动同步到云端</div>
+            <button
+              onClick={() => void logout()}
+              className="rounded-lg border border-line px-4 py-2 text-sm"
+            >
+              退出登录
+            </button>
+          </div>
+        )}
+        {cloudOk && !user && (
+          <div className="space-y-2">
+            <div className="text-sm text-inksoft">游客模式：数据仅保存在本机</div>
+            <Link
+              to="/auth"
+              className="inline-block rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white"
+            >
+              登录 / 注册
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {showAdd && <BabyForm onClose={() => setShowAdd(false)} />}
+      {editing && <BabyForm initial={editing} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}
+
+// --- Auth Page ---
+function AuthPage() {
+  const user = useAuthStore((s) => s.user);
+  const login = useAuthStore((s) => s.login);
+  const register = useAuthStore((s) => s.register);
+  const cloudOk = isCloudConfigured();
+  const navigate = useNavigate();
+
+  const [mode, setMode] = React.useState<'login' | 'register'>('login');
+  const [username, setUsername] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [needsConfirm, setNeedsConfirm] = React.useState(false);
+
+  useEffect(() => {
+    if (user) navigate('/', { replace: true });
+  }, [user, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+      setError('用户名需 3-20 位字母、数字或下划线');
+      return;
+    }
+    if (password.length < 6) {
+      setError('密码至少 6 位');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (mode === 'login') {
+        await login(username, password);
+        navigate('/');
+      } else {
+        const res = await register(username, password);
+        if (res.needsConfirm) {
+          setNeedsConfirm(true);
+          setMode('login');
+        } else {
+          navigate('/');
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '操作失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!cloudOk) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <Icon icon="mdi:cloud-off-outline" className="text-4xl text-inksoft" />
+        <h1 className="mt-4 text-xl font-bold">云端服务未配置</h1>
+        <p className="mt-2 text-inksoft">暂时只能游客模式使用（数据保存在本机）</p>
+        <Link to="/" className="mt-4 text-brand underline">
+          返回首页
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-sm py-8">
+      <h1 className="mb-6 text-center text-2xl font-bold">{mode === 'login' ? '登录' : '注册'}</h1>
+
+      <div className="mb-4 flex rounded-xl bg-creamdark p-1">
+        <button
+          onClick={() => setMode('login')}
+          className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
+            mode === 'login' ? 'bg-white shadow' : ''
+          }`}
+        >
+          登录
+        </button>
+        <button
+          onClick={() => setMode('register')}
+          className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
+            mode === 'register' ? 'bg-white shadow' : ''
+          }`}
+        >
+          注册
+        </button>
+      </div>
+
+      {needsConfirm && (
+        <div className="mb-4 rounded-lg bg-[#E9F4EC] px-4 py-3 text-sm text-[#2F6B4F]">
+          注册成功！请到邮箱点击确认链接后再登录
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input
+          type="text"
+          placeholder="用户名"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+        />
+        <input
+          type="password"
+          placeholder="密码"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+        />
+        {error && <div className="text-sm text-red-500">{error}</div>}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-xl bg-brand py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+        >
+          {loading ? '处理中...' : mode === 'login' ? '登录' : '注册'}
+        </button>
+      </form>
+
+      <Link to="/" className="mt-4 block text-center text-sm text-inksoft underline">
+        返回首页
+      </Link>
+    </div>
+  );
+}
+
+// --- Onboarding Page ---
+function OnboardingPage() {
+  const babies = useDataStore((s) => s.babies);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (babies.length > 0) navigate('/', { replace: true });
+  }, [babies, navigate]);
+
+  return (
+    <div className="flex flex-col items-center py-8 text-center">
+      <Icon icon="mdi:baby-bottle-outline" className="text-6xl text-brand" />
+      <h1 className="mt-4 text-2xl font-bold">闪电喂养</h1>
+      <p className="mt-2 text-inksoft">3 秒记一次，双胞胎也不乱</p>
+
+      <div className="mt-6 w-full max-w-sm rounded-2xl bg-white p-4">
+        <h2 className="mb-4 text-lg font-bold">添加第一个宝宝</h2>
+        <BabyFormInline />
+      </div>
+
+      <Link to="/auth" className="mt-4 text-sm text-inksoft underline">
+        已有账号？登录同步云端
+      </Link>
+    </div>
+  );
+}
+
+function BabyFormInline() {
+  const addBaby = useDataStore((s) => s.addBaby);
+  const babies = useDataStore((s) => s.babies);
+
+  const [name, setName] = React.useState('');
+  const [gender, setGender] = React.useState<Gender>('male');
+  const [birthDate, setBirthDate] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const previewAvatar = pickUnusedAvatar(babies.map((b) => b.avatar));
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('请输入宝宝昵称');
+      return;
+    }
+    if (!birthDate) {
+      setError('请选择出生日期');
+      return;
+    }
+    setSaving(true);
+    await addBaby({ name: name.trim(), gender, birth_date: birthDate });
+    setSaving(false);
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-center gap-3">
+        <span
+          className="flex h-12 w-12 items-center justify-center rounded-full text-2xl"
+          style={{ backgroundColor: `${previewAvatar.color}22` }}
+        >
+          {previewAvatar.emoji}
+        </span>
+        <span className="text-sm" style={{ color: previewAvatar.color }}>
+          {previewAvatar.label}
+        </span>
+      </div>
+
+      <input
+        type="text"
+        maxLength={12}
+        placeholder="宝宝昵称"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+      />
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setGender('male')}
+          className={`flex-1 rounded-xl py-3 text-base font-medium transition ${
+            gender === 'male' ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+          }`}
+        >
+          <Icon icon="mdi:baby-face-outline" className="mr-1 inline" /> 男宝
+        </button>
+        <button
+          onClick={() => setGender('female')}
+          className={`flex-1 rounded-xl py-3 text-base font-medium transition ${
+            gender === 'female' ? 'bg-brand text-white' : 'bg-creamdark text-ink'
+          }`}
+        >
+          <Icon icon="mdi:baby-face-outline" className="mr-1 inline" /> 女宝
+        </button>
+      </div>
+
+      <input
+        type="date"
+        max={today}
+        value={birthDate}
+        onChange={(e) => setBirthDate(e.target.value)}
+        className="w-full rounded-xl border border-line bg-white px-4 py-3 text-base outline-none focus:ring-2 focus:ring-brand"
+      />
+
+      {error && <div className="text-sm text-red-500">{error}</div>}
+
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full rounded-xl bg-brand py-4 text-lg font-bold text-white transition active:scale-95 disabled:opacity-50"
+      >
+        {saving ? '保存中...' : '开始记录'}
+      </button>
+    </div>
+  );
+}
+
+// --- Layout ---
+function Layout() {
+  const babies = useDataStore((s) => s.babies);
+  const onboardingSkipped = useDataStore((s) => s.onboardingSkipped);
+  const user = useAuthStore((s) => s.user);
+  const syncing = useDataStore((s) => s.syncing);
+
+  if (babies.length === 0 && !onboardingSkipped) return <Navigate to="/welcome" replace />;
+
+  return (
+    <div className="min-h-screen pb-24">
+      <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-md items-center justify-between px-4 py-2">
+          <span className="text-lg font-bold"><Icon icon="mdi:baby-bottle-outline" className="mr-1 inline" /> 闪电喂养</span>
+          {syncing ? (
+            <span className="rounded-full bg-creamdark px-3 py-1 text-sm text-inksoft">同步中...</span>
+          ) : user ? (
+            <span className="rounded-full bg-[#E9F4EC] px-3 py-1 text-sm text-[#2F6B4F]">
+              {user.username}
+            </span>
+          ) : (
+            <Link
+              to="/auth"
+              className="rounded-full bg-[#FBF3E1] px-3 py-1 text-sm text-[#8A6414]"
+            >
+              游客模式 · 点此登录
+            </Link>
+          )}
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-md px-4 pt-2">
+        <Outlet />
+      </main>
+
+      <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-line bg-white/95 backdrop-blur safe-bottom">
+        <div className="mx-auto flex max-w-md">
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              `flex flex-1 flex-col items-center py-3 text-sm ${isActive ? 'text-brand' : 'text-inksoft'}`
+            }
+          >
+            <Icon icon="mdi:home-outline" className="text-xl" />
+            <span>首页</span>
+          </NavLink>
+          <NavLink
+            to="/compare"
+            className={({ isActive }) =>
+              `flex flex-1 flex-col items-center py-3 text-sm ${isActive ? 'text-brand' : 'text-inksoft'}`
+            }
+          >
+            <Icon icon="mdi:chart-bar" className="text-xl" />
+            <span>对比</span>
+          </NavLink>
+          <NavLink
+            to="/manage"
+            className={({ isActive }) =>
+              `flex flex-1 flex-col items-center py-3 text-sm ${isActive ? 'text-brand' : 'text-inksoft'}`
+            }
+          >
+            <Icon icon="mdi:baby-face-outline" className="text-xl" />
+            <span>管理</span>
+          </NavLink>
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+// --- Toast Host ---
+function ToastHost() {
+  const toasts = useToastStore((s) => s.toasts);
+
+  return (
+    <div className="fixed top-3 inset-x-0 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="flex items-center gap-2 rounded-xl border bg-white px-4 py-2 shadow-lg animate-toast-in"
+          style={{ borderColor: t.color }}
+        >
+          <span
+            className="flex h-7 w-7 items-center justify-center rounded-full text-base"
+            style={{ backgroundColor: `${t.color}22` }}
+          >
+            {t.emoji}
+          </span>
+          <span className="font-medium text-ink">{t.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- Splash ---
+function Splash() {
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <Icon icon="mdi:baby-bottle-outline" className="text-4xl text-brand" />
+    </div>
+  );
+}
+
+// --- Main App ---
+export default function App() {
+  const initializing = useAuthStore((s) => s.initializing);
+  const init = useAuthStore((s) => s.init);
+
+  useEffect(() => {
+    init();
+  }, [init]);
+
+  if (initializing) return <Splash />;
+
+  return (
+    <HashRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/compare" element={<ComparePage />} />
+          <Route path="/manage" element={<ManagePage />} />
+        </Route>
+        <Route path="/auth" element={<AuthPage />} />
+        <Route path="/welcome" element={<OnboardingPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <ToastHost />
+    </HashRouter>
+  );
+}
